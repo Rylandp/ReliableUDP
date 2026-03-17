@@ -1,0 +1,4 @@
+Hello, this is a test file.
+This file is used to test reliable UDP transfer.
+Each line helps verify ordering and completeness.
+End of file.

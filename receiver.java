@@ -148,6 +148,26 @@ public class receiver {
 
     public void run() throws IOException {
         // TODO
+        System.err.println("Receiver started on port " + socket.getLocalPort());
+        startCleanupThread();
+        byte[] buffer = new byte[65535];
+        while (true) {
+            DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
+            socket.receive(packet);
+
+            if (verbose) {
+                System.err.println("Received packet from " + packet.getAddress() + ":" + packet.getPort());
+            }
+
+            String message = new String(packet.getData(), 0, packet.getLength());
+            System.err.println("Received message: " + message);
+            InetAddress senderAddr = packet.getAddress();
+            int senderPort = packet.getPort();
+
+            String[] tokens = message.split(" ", 4);
+
+
+        }
     }
 
     // ----------------------------------------------------------------
