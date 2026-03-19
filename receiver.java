@@ -166,7 +166,24 @@ public class receiver {
 
             String[] tokens = message.split(" ", 4);
 
+            try{
+                switch(tokens[0]){
+                    case "BEGIN":
+                        handleBegin(senderAddr, senderPort, tokens);
+                        break;
+                    case "DATA":
+                        handleData(senderAddr, senderPort, tokens);
+                        break;
+                    case "END":
+                        handleEnd(senderAddr, senderPort, tokens);
+                        break;
+                    default:
+                        sendReply(senderAddr, senderPort, "ERR malformed");
 
+                }
+            } catch (Exception e) {
+                sendReply(senderAddr, senderPort, "ERR malformed");
+            }
         }
     }
 
