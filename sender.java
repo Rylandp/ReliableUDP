@@ -8,16 +8,20 @@ import java.util.*;
  * UDP file sender with configurable loss and reorder simulation.
  *
  * Usage:
- *   java sender.java [-v] <host> <port> <file> <loss%> <reorder%>
+ *   java sender.java [-v] <host> <port> <file> <loss%> <reorder%> <dup%>
  *
  * The sender splits the file into 1000-byte chunks, base64-encodes each,
  * and sends them as UDP datagrams using a stop-and-wait protocol.
  *
- * Loss simulation: each outgoing DATA packet has a <loss%> chance of being
- * silently dropped (not sent).
+ * Loss simulation: on each send attempt, there is a <loss%> chance the
+ * packet is silently dropped (not transmitted).  The sender still waits
+ * for an ACK, times out, and retransmits — modeling real network loss.
  *
  * Reorder simulation: each outgoing DATA packet has a <reorder%> chance of
  * being delayed and sent after the next packet instead.
+ *
+ * Duplicate simulation: on each send attempt, there is a <dup%> chance
+ * the packet is transmitted twice, causing the receiver to see a duplicate.
  */
 public class sender {
 
@@ -38,13 +42,16 @@ public class sender {
 
     private final int lossPct;
     private final int reorderPct;
+    private final int dupPct;
 
     public sender(String host, int port, String filePath,
-                  int lossPct, int reorderPct, boolean verbose) throws Exception {
+                  int lossPct, int reorderPct, int dupPct,
+                  boolean verbose) throws Exception {
         this.destAddr = InetAddress.getByName(host);
         this.destPort = port;
         this.lossPct = lossPct;
         this.reorderPct = reorderPct;
+        this.dupPct = dupPct;
         this.verbose = verbose;
 
         this.socket = new DatagramSocket();
@@ -65,7 +72,7 @@ public class sender {
     public void run() throws Exception {
         log("Transfer %s: %s (%d chunks, md5=%s)",
             transferId, filename, chunks.size(), checksum);
-        log("Loss=%d%%, Reorder=%d%%", lossPct, reorderPct);
+        log("Loss=%d%%, Reorder=%d%%, Dup=%d%%", lossPct, reorderPct, dupPct);
 
         sendBegin();
         sendAllChunks();
@@ -107,11 +114,6 @@ public class sender {
                 continue;
             }
 
-            // Loss simulation: skip sending (receiver won't ACK, so we retry)
-            if (rng.nextInt(100) < lossPct) {
-                vlog("  [loss] dropping seq=%d", seq);
-            }
-
             sendAndWaitAck(msg, String.valueOf(seq));
         }
 
@@ -137,28 +139,46 @@ public class sender {
         byte[] buf = new byte[1024];
 
         for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-            socket.send(outPkt);
-            vlog("  sent %s (attempt %d)", expectedAckTag, attempt);
 
-            try {
-                DatagramPacket inPkt = new DatagramPacket(buf, buf.length);
-                socket.receive(inPkt);
-                String reply = new String(
-                    inPkt.getData(), 0, inPkt.getLength()).trim();
+            // Loss simulation: don't transmit, fall through to ACK wait
+            // (will timeout, triggering a retransmit on the next attempt)
+            if (rng.nextInt(100) < lossPct) {
+                vlog("  [loss] dropped %s (attempt %d)", expectedAckTag, attempt);
+            } else {
+                socket.send(outPkt);
+                vlog("  sent %s (attempt %d)", expectedAckTag, attempt);
 
-                if (reply.equals(expectedReply)) {
-                    vlog("  got %s", reply);
-                    return;
+                // Dup simulation: transmit a second copy immediately
+                if (rng.nextInt(100) < dupPct) {
+                    socket.send(outPkt);
+                    vlog("  [dup] re-sent %s (attempt %d)", expectedAckTag, attempt);
                 }
+            }
 
-                vlog("  unexpected reply: %s (wanted: %s)", reply, expectedReply);
+            // Read replies until we get the expected ACK or timeout.
+            // Stale ACKs (from dup sends) are discarded without retransmitting.
+            try {
+                while (true) {
+                    DatagramPacket inPkt = new DatagramPacket(buf, buf.length);
+                    socket.receive(inPkt);
+                    String reply = new String(
+                        inPkt.getData(), 0, inPkt.getLength()).trim();
+
+                    if (reply.equals(expectedReply)) {
+                        vlog("  got %s", reply);
+                        return;
+                    }
+
+                    vlog("  stale reply: %s (wanted: %s)", reply, expectedReply);
+                }
             } catch (SocketTimeoutException e) {
                 vlog("  timeout waiting for %s", expectedReply);
             }
         }
 
-        System.err.printf("ERROR: gave up after %d retries for %s %s%n",
-            MAX_RETRIES, transferId, expectedAckTag);
+        throw new IOException(String.format(
+            "gave up after %d retries for %s %s",
+            MAX_RETRIES, transferId, expectedAckTag));
     }
 
     // --- Helpers ---
@@ -189,9 +209,9 @@ public class sender {
             ai = 1;
         }
 
-        if (args.length - ai != 5) {
+        if (args.length - ai != 6) {
             System.err.println(
-                "Usage: java sender.java [-v] <host> <port> <file> <loss%> <reorder%>");
+                "Usage: java sender.java [-v] <host> <port> <file> <loss%> <reorder%> <dup%>");
             System.exit(1);
         }
 
@@ -200,8 +220,9 @@ public class sender {
         String filePath = args[ai + 2];
         int lossPct = Integer.parseInt(args[ai + 3]);
         int reorderPct = Integer.parseInt(args[ai + 4]);
+        int dupPct = Integer.parseInt(args[ai + 5]);
 
-        sender s = new sender(host, port, filePath, lossPct, reorderPct, verbose);
+        sender s = new sender(host, port, filePath, lossPct, reorderPct, dupPct, verbose);
         s.run();
     }
 }

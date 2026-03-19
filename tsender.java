@@ -10,7 +10,7 @@ import java.util.concurrent.*;
  * and reports PASS/FAIL per transfer.
  *
  * Usage:
- *   java tsender.java <host> <port> <loss%> <reorder%> <file1> [file2 ...]
+ *   java tsender.java <host> <port> <loss%> <reorder%> <dup%> <file1> [file2 ...]
  *
  * Use 'auto' as a filename to generate small/medium/large test files.
  */
@@ -24,14 +24,16 @@ public class tsender {
     private final int port;
     private final int lossPct;
     private final int reorderPct;
+    private final int dupPct;
     private final List<String> filePaths;
 
     public tsender(String host, int port, int lossPct, int reorderPct,
-                   List<String> filePaths) {
+                   int dupPct, List<String> filePaths) {
         this.host = host;
         this.port = port;
         this.lossPct = lossPct;
         this.reorderPct = reorderPct;
+        this.dupPct = dupPct;
         this.filePaths = filePaths;
     }
 
@@ -111,10 +113,6 @@ public class tsender {
                     continue;
                 }
 
-                if (rng.nextInt(100) < lossPct) {
-                    // Simulate drop — will be retransmitted on timeout
-                }
-
                 sendAndWaitAck(msg, String.valueOf(seq));
             }
 
@@ -137,13 +135,29 @@ public class tsender {
             byte[] buf = new byte[1024];
 
             for (int attempt = 1; attempt <= MAX_RETRIES; attempt++) {
-                socket.send(outPkt);
+
+                // Loss simulation: skip transmit, fall through to ACK wait
+                if (rng.nextInt(100) < lossPct) {
+                    // don't send — will timeout and retry
+                } else {
+                    socket.send(outPkt);
+
+                    // Dup simulation: transmit a second copy immediately
+                    if (rng.nextInt(100) < dupPct) {
+                        socket.send(outPkt);
+                    }
+                }
+
+                // Read replies until expected ACK or timeout.
+                // Stale ACKs (from dup sends) are discarded.
                 try {
-                    DatagramPacket inPkt = new DatagramPacket(buf, buf.length);
-                    socket.receive(inPkt);
-                    String reply = new String(
-                        inPkt.getData(), 0, inPkt.getLength()).trim();
-                    if (reply.equals(expectedReply)) return;
+                    while (true) {
+                        DatagramPacket inPkt = new DatagramPacket(buf, buf.length);
+                        socket.receive(inPkt);
+                        String reply = new String(
+                            inPkt.getData(), 0, inPkt.getLength()).trim();
+                        if (reply.equals(expectedReply)) return;
+                    }
                 } catch (SocketTimeoutException e) {
                     // retry
                 }
@@ -156,8 +170,8 @@ public class tsender {
     // --- Orchestration ---
 
     public int run() throws Exception {
-        System.err.printf("[tsender] %d transfers, loss=%d%%, reorder=%d%%%n",
-            filePaths.size(), lossPct, reorderPct);
+        System.err.printf("[tsender] %d transfers, loss=%d%%, reorder=%d%%, dup=%d%%%n",
+            filePaths.size(), lossPct, reorderPct, dupPct);
 
         ExecutorService pool = Executors.newFixedThreadPool(filePaths.size());
         List<Future<Result>> futures = new ArrayList<>();
@@ -237,9 +251,9 @@ public class tsender {
     // --- Entry point ---
 
     public static void main(String[] args) throws Exception {
-        if (args.length < 5) {
+        if (args.length < 6) {
             System.err.println(
-                "Usage: java tsender.java <host> <port> <loss%> <reorder%> <file1> [file2 ...]");
+                "Usage: java tsender.java <host> <port> <loss%> <reorder%> <dup%> <file1> [file2 ...]");
             System.err.println(
                 "       Use 'auto' as file to generate test files automatically.");
             System.exit(1);
@@ -249,9 +263,10 @@ public class tsender {
         int port = Integer.parseInt(args[1]);
         int lossPct = Integer.parseInt(args[2]);
         int reorderPct = Integer.parseInt(args[3]);
+        int dupPct = Integer.parseInt(args[4]);
 
         List<String> filePaths = new ArrayList<>();
-        for (int i = 4; i < args.length; i++) {
+        for (int i = 5; i < args.length; i++) {
             if (args[i].equals("auto")) {
                 filePaths.addAll(generateTestFiles());
             } else {
@@ -259,7 +274,7 @@ public class tsender {
             }
         }
 
-        tsender t = new tsender(host, port, lossPct, reorderPct, filePaths);
+        tsender t = new tsender(host, port, lossPct, reorderPct, dupPct, filePaths);
         int failed = t.run();
 
         cleanupAutoFiles(filePaths);
