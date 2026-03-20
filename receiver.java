@@ -274,7 +274,25 @@ public class receiver {
 
     private void handleData(InetAddress addr, int port, String[] tokens)
             throws Exception {
-        // TODO
+                // TODO
+                String dataMessage = String.join(" ", tokens);
+                String[] parts = dataMessage.split(" ", 4);
+                if (parts.length != 4) {
+                    sendReply(addr, port, "ERR malformed");
+                    return;
+                }
+
+                String transferID = parts[1];
+                String seqNum = parts[2];
+                String payload = parts[3];
+
+                if(transferID == null || transferID.isEmpty()) {
+                    sendReply(addr, port, "ERR malformed");
+                    return;
+                }
+
+                // look up transfer by ID)
+        
     }
 
     // ----------------------------------------------------------------
