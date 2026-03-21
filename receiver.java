@@ -293,6 +293,10 @@ public class receiver {
 
                 Transfer t = transfers.get(transferID);
                 if(t == null) {
+                    if (completed.contains(transferID)) {
+                        sendReply(addr, port, String.format("ACK %s %s", transferID, seqNum));
+                        return;
+                    }
                     sendReply(addr, port, "ERR unknown transfer");
                     return;
                 }
@@ -309,7 +313,7 @@ public class receiver {
 
                 if(t.isDuplicate(seqNumToInt)){
                     log("DUP %s seq=%s", transferID, seqNum);
-                    sendReply(addr, port, String.format("ACK %s DATA", seqNum));
+                    sendReply(addr, port, String.format("ACK %s %s", transferID, seqNum));
                     return;
                 }
 
@@ -355,6 +359,10 @@ public class receiver {
                 }
                 Transfer t = transfers.get(transferID);
                 if(t == null) {
+                    if (completed.contains(transferID)) {
+                        sendReply(addr, port, String.format("ACK %s END", transferID));
+                        return;
+                    }
                     sendReply(addr, port, "ERR unknown transfer");
                     return;
                 }
