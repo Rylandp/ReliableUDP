@@ -386,6 +386,20 @@ public class receiver {
 
     private void completeTransfer(Transfer t) {
         // TODO
+        String status = "FAIL";
+        
+        try {
+            String actualChecksum = t.reassembleAndVerify();
+            if(actualChecksum.equals(t.expectedChecksum)){
+                status = "OK";
+            }
+        } catch (Exception e) {
+            status = "FAIL";
+        }
+
+        log("COMPLETE %s file=%s status=%s", t.transferId, t.filename, status);
+        completed.add(t.transferId);
+        transfers.remove(t.transferId);
     }
 
     // ----------------------------------------------------------------
