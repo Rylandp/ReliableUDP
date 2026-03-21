@@ -160,7 +160,6 @@ public class receiver {
             }
 
             String message = new String(packet.getData(), 0, packet.getLength());
-            System.err.println("Received message: " + message);
             InetAddress senderAddr = packet.getAddress();
             int senderPort = packet.getPort();
 
