@@ -94,31 +94,44 @@ public class tsender {
         }
 
         private void sendAllChunks() throws Exception {
-            String delayedMsg = null;
-            int delayedSeq = -1;
+            int reorderCap = Math.max(2, Math.min(6, reorderPct / 10));
+            List<String> reorderBuf = new ArrayList<>();
+            List<Integer> reorderSeqs = new ArrayList<>();
 
             for (int seq = 0; seq < chunks.size(); seq++) {
                 String b64 = Base64.getEncoder().encodeToString(chunks.get(seq));
                 String msg = String.format("DATA %s %d %s", transferId, seq, b64);
 
-                if (delayedMsg != null) {
-                    sendAndWaitAck(delayedMsg, String.valueOf(delayedSeq));
-                    delayedMsg = null;
-                    delayedSeq = -1;
-                }
-
                 if (rng.nextInt(100) < reorderPct && seq < chunks.size() - 1) {
-                    delayedMsg = msg;
-                    delayedSeq = seq;
+                    reorderBuf.add(msg);
+                    reorderSeqs.add(seq);
+                    if (reorderBuf.size() >= reorderCap) {
+                        flushReorderBuffer(reorderBuf, reorderSeqs);
+                    }
                     continue;
                 }
 
+                if (!reorderBuf.isEmpty()) {
+                    flushReorderBuffer(reorderBuf, reorderSeqs);
+                }
                 sendAndWaitAck(msg, String.valueOf(seq));
             }
 
-            if (delayedMsg != null) {
-                sendAndWaitAck(delayedMsg, String.valueOf(delayedSeq));
+            if (!reorderBuf.isEmpty()) {
+                flushReorderBuffer(reorderBuf, reorderSeqs);
             }
+        }
+
+        private void flushReorderBuffer(List<String> buf, List<Integer> seqs)
+                throws Exception {
+            List<Integer> indices = new ArrayList<>();
+            for (int i = 0; i < buf.size(); i++) indices.add(i);
+            Collections.shuffle(indices, rng);
+            for (int i : indices) {
+                sendAndWaitAck(buf.get(i), String.valueOf(seqs.get(i)));
+            }
+            buf.clear();
+            seqs.clear();
         }
 
         private void sendEnd() throws Exception {

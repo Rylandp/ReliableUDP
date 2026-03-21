@@ -291,7 +291,33 @@ public class receiver {
                     return;
                 }
 
-                // look up transfer by ID)
+                Transfer t = transfers.get(transferID);
+                if(t == null) {
+                    sendReply(addr, port, "ERR unknown transfer");
+                    return;
+                }
+                if(t.isComplete()){
+                    sendReply(addr, port, String.format("ACK %s DATA", seqNum));
+                    return;
+                }
+
+                int seqNumToInt = Integer.parseInt(seqNum);
+                if(seqNumToInt < 0 || seqNumToInt > t.totalChunks-1) {
+                    sendReply(addr, port, "ERR malformed");
+                    return;
+                }
+
+                if(t.isDuplicate(seqNumToInt)){
+                    log("DUP %s seq=%s", transferID, seqNum);
+                    sendReply(addr, port, String.format("ACK %s DATA", seqNum));
+                    return;
+                }
+
+                byte[] decodedPayload = Base64.getDecoder().decode(payload);
+                t.storeChunk(seqNumToInt, decodedPayload);
+                log("RECV %s DATA seq=%s", transferID, seqNum);
+                sendReply(addr, port, String.format("ACK %s %s", transferID, seqNum));
+                completeTransfer(t);
         
     }
 
