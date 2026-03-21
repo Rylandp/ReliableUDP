@@ -317,7 +317,7 @@ public class receiver {
                 t.storeChunk(seqNumToInt, decodedPayload);
                 log("RECV %s DATA seq=%s", transferID, seqNum);
                 sendReply(addr, port, String.format("ACK %s %s", transferID, seqNum));
-                 if(t.isComplete()) completeTransfer(t);
+                if(t.isComplete()) completeTransfer(t);
         
     }
 
