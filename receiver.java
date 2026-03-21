@@ -317,7 +317,7 @@ public class receiver {
                 t.storeChunk(seqNumToInt, decodedPayload);
                 log("RECV %s DATA seq=%s", transferID, seqNum);
                 sendReply(addr, port, String.format("ACK %s %s", transferID, seqNum));
-                completeTransfer(t);
+                 if(t.isComplete()) completeTransfer(t);
         
     }
 
@@ -340,7 +340,32 @@ public class receiver {
 
     private void handleEnd(InetAddress addr, int port, String[] tokens)
             throws IOException {
-        // TODO
+                // TODO
+                String dataMessage = String.join(" ", tokens);
+                String[] parts = dataMessage.split(" ", 2);
+                if (parts.length != 2) {
+                    sendReply(addr, port, "ERR malformed");
+                    return;
+                }
+                
+                String transferID = parts[1];
+                if(transferID == null || transferID.isEmpty()) {
+                    sendReply(addr, port, "ERR malformed");
+                    return;
+                }
+                Transfer t = transfers.get(transferID);
+                if(t == null) {
+                    sendReply(addr, port, "ERR unknown transfer");
+                    return;
+                }
+                if(t.isComplete()){
+                    sendReply(addr, port, String.format("ACK %s END", transferID));
+                    return;
+                }
+                t.touch();
+                sendReply(addr, port, String.format("ACK %s END", transferID));
+
+                if(t.isComplete()) completeTransfer(t);
     }
 
     // ----------------------------------------------------------------
